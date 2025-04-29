@@ -13,6 +13,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 CORS(app)
+@app.route("/", methods=["GET"])
+def home():
+    return "SafePost API is running!"
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
