@@ -19,7 +19,7 @@ function App() {
     if (!image) return alert('이미지를 업로드해주세요.');
     setLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/analyze', {
+      const response = await fetch("https://safepost.onrender.com/analyze", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image, caption: '' })
