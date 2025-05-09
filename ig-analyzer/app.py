@@ -249,8 +249,5 @@ def risk_assess():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    # app.py 맨 아래에 추가
-@app.route('/ping', methods=['GET'])
-def ping():
-    return jsonify({"pong": True})
+    
 
