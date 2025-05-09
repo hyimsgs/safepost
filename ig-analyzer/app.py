@@ -87,7 +87,6 @@ def fetch_user_interactions(user_id: str, limit: int = 5) -> dict:
 
     return interactions
 @app.route('/ping', methods=['GET'])
-@app.route('/ping/', methods=['GET'])
 def ping():
     return jsonify({"pong": True})
 
