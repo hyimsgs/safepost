@@ -86,6 +86,10 @@ def fetch_user_interactions(user_id: str, limit: int = 5) -> dict:
         logging.error("Instagram API 호출 오류:\n%s", traceback.format_exc())
 
     return interactions
+@app.route('/ping', methods=['GET'])
+@app.route('/ping/', methods=['GET'])
+def ping():
+    return jsonify({"pong": True})
 
 
 @app.route("/", methods=["GET"])
@@ -144,6 +148,8 @@ def analyze():
         tb = traceback.format_exc()
         logging.error("analyze 엔드포인트 오류:\n%s", tb)
         return jsonify({"error": str(e), "traceback": tb}), 500
+    
+    
 
 
 # ① OPTIONS 프리플라이트 전용 핸들러
@@ -164,6 +170,8 @@ def risk_assess():
         caption   = payload.get("caption", "")
         image_b64 = payload.get("image")
         target_id = payload.get("target_user_id")
+        print(">>> BACKEND RESPONSE:", result)
+
 
         if not image_b64 or not target_id:
             return jsonify({"error": "image or target_user_id missing"}), 400
@@ -192,16 +200,42 @@ def risk_assess():
 """
 
         response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
-                ]
-            }],
-            max_tokens=300
-        )
+    model="gpt-4o",
+    # 이미지는 multimodal_inputs로 분리
+    multimodal_inputs=[{
+        "type": "image_url",
+        "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}
+    }],
+    # system + user 메시지
+    messages=[
+        {
+            "role": "system",
+            "content": (
+                "당신은 인스타그램 포스트의 팔로워 반응 리스크를 평가하는 도구입니다. "
+                "반드시 아래 JSON 스키마만 반환하세요:\n"
+                "{\n"
+                '  "risk_assessment": "싫어할 확률: X%",\n'
+                '  "sensitive_points": ["포인트1", "포인트2"],\n'
+                '  "visibility_recommendation": "public|private|close_friends"\n'
+                "}"
+            )
+        },
+        {
+            "role": "user",
+            "content": (
+                f"다음 이미지를 보고, 캡션 \"{caption}\"과 함께:\n"
+                "- 팔로워가 싫어할 확률을 % 단위로\n"
+                "- 민감 포인트 목록\n"
+                "- 공개 범위 추천\n"
+                "형식 그대로 JSON으로만 응답해주세요."
+            )
+        }
+    ],
+    temperature=0.0,
+    max_tokens=300
+)
+
+
 
         result = response.choices[0].message.content.strip()
         logging.debug("risk_assess 응답: %s", result)
@@ -216,3 +250,8 @@ def risk_assess():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    # app.py 맨 아래에 추가
+@app.route('/ping', methods=['GET'])
+def ping():
+    return jsonify({"pong": True})
+
