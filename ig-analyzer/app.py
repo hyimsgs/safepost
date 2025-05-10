@@ -35,6 +35,14 @@ L = instaloader.Instaloader(
     download_videos=False,
     post_metadata_txt_pattern=""
 )
+IG_USERNAME = os.getenv("IG_USERNAME")
+IG_PASSWORD = os.getenv("IG_PASSWORD")
+if IG_USERNAME and IG_PASSWORD:
+    try:
+        L.login(IG_USERNAME, IG_PASSWORD)
+        logging.info("Instagram 스크래핑: 로그인 성공")
+    except Exception:
+        logging.warning("Instagram 스크래핑: 로그인 실패, 익명으로 시도합니다")
 
 def fetch_user_interactions(username: str, limit: int = 5) -> dict:
     """
