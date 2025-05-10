@@ -169,7 +169,7 @@ def risk_assess():
         caption   = payload.get("caption", "")
         image_b64 = payload.get("image")
         target_id = payload.get("target_user_id")
-        print(">>> BACKEND RESPONSE:", result)
+        
 
 
         if not image_b64 or not target_id:
@@ -238,6 +238,7 @@ def risk_assess():
 
         result = response.choices[0].message.content.strip()
         logging.debug("risk_assess 응답: %s", result)
+        print(">>> BACKEND RESPONSE:", result)
         return jsonify({"risk_assessment": result})
 
     except Exception as e:
