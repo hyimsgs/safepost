@@ -26,12 +26,9 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
+# 스크래핑을 통한 사용자 활동 수집 함수
 
 def fetch_user_interactions(username: str, limit: int = 5) -> dict:
-    """
-    Instagram 웹 프로필 JSON API를 이용해 공개 계정(username)의
-    최근 limit개 게시물 캡션·좋아요 평균·댓글 수 추출
-    """
     interactions = {"recent_posts": [], "avg_likes": 0, "recent_comment_texts": []}
     try:
         UA = (
@@ -48,17 +45,12 @@ def fetch_user_interactions(username: str, limit: int = 5) -> dict:
         likes = []
         for edge in edges:
             node = edge["node"]
-            # 캡션
             cap_edges = node.get("edge_media_to_caption", {}).get("edges", [])
             text = cap_edges[0]["node"]["text"][:100] if cap_edges else ""
             interactions["recent_posts"].append(text)
-            # 좋아요 수
             likes.append(node.get("edge_liked_by", {}).get("count", 0))
-            # (댓글은 생략)
-
         if likes:
             interactions["avg_likes"] = sum(likes) // len(likes)
-
     except Exception:
         logging.error("Instagram 스크래핑 오류:\n%s", traceback.format_exc())
     return interactions
@@ -82,39 +74,31 @@ def analyze():
 
         prompt = f"""
 너는 인스타그램 감성 분석 도우미야.
-
-아래 게시물(이미지+캡션)을 분석해.
-
-🎯 반드시 다음 3가지를 생성해야 해:
+아래 게시물(이미지+캡션)을 분석해서:
 1. 사람들이 싫어하지 않을 확률 (0~100 숫자만)
 2. 위험도에 대한 짧고 구체적인 경고 메시지
 3. 개선을 위한 짧고 구체적인 추천 메시지
-
-응답 포맷:
-싫어하지 않을 확률: (숫자)%
-경고: (경고 문구)
-추천: (추천 문구)
-
+출력 형식:
+싫어하지않을확률: 85%
+경고: ...
+추천: ...
 캡션: {caption}
 """
-
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "당신은 인스타그램 감성 분석 도우미입니다. JSON 형식으로만 응답하세요."},
-                {"role": "user",   "content": prompt}
+                {"role": "system", "content": "당신은 인스타그램 감성 분석 도우미입니다. 응답은 오직 위 형식의 세 줄 텍스트만으로 구성하세요."},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.0,
             max_tokens=300
         )
-
         raw_text = response.choices[0].message.content.strip()
         logging.debug("analyze 응답: %s", raw_text)
         return jsonify({"result": raw_text})
-
     except Exception as e:
         tb = traceback.format_exc()
-        logging.error("analyze 엔드포인트 오류:\n%s", tb)
+        logging.error("analyze 오류:\n%s", tb)
         return jsonify({"error": str(e), "traceback": tb}), 500
 
 @app.route('/risk_assess', methods=['OPTIONS'])
@@ -136,55 +120,38 @@ def risk_assess():
             return jsonify({"error": "image or target_user_id missing"}), 400
 
         interactions = fetch_user_interactions(target_id)
-
         prompt = f"""
 너는 인스타 지인 반응 리스크 평가 전문가야.
-
-아래는 대상 지인({target_id})의 최근 활동 내역이야:
+지인({target_id})의 최근 활동:
 - 최근 게시물 요약: {interactions['recent_posts']}
 - 평균 좋아요 수: {interactions['avg_likes']}
-
-아래 게시물(이미지+캡션)에 대해:
-1) 싫어하지 않을 확률(0~100)%
-2) 민감 포인트
-3) 공개 범위 추천
-
-반드시 아래 형식으로만 JSON을 반환하세요:
-{{
-  "싫어하지않을확률": "X%",
-  "민감포인트": ["포인트1", "포인트2"],
-  "공개범위추천": "전체공개|비공개|친구공개"
-}}
-
+아래 게시물(이미지+캡션)에 대해
+1) 싫어하지않을확률(0~100)%
+2) 민감포인트
+3) 공개범위추천
+출력 형식 (중괄호와 따옴표 없이, 한 줄씩):
+싫어하지않을확률: 10%
+민감포인트: 짧은 캡션
+공개범위추천: 친구공개
 캡션: {caption}
 """
-
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "당신은 인스타그램 포스트의 팔로워 반응 리스크를 평가하는 도구입니다. "
-                        "영어를 사용하지 말고, 키와 값을 모두 한국어로 출력하세요. "
-                        "반드시 JSON 형식으로만 응답하세요."
-                    )
-                },
+                {"role": "system", "content": "영어 사용 금지. 응답은 오직 지정된 텍스트 형식의 네 줄만으로 구성하세요."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.0,
             max_tokens=300
         )
-
         result = response.choices[0].message.content.strip()
         logging.debug("risk_assess 응답: %s", result)
         return jsonify({"risk_assessment": result})
-
     except Exception as e:
         tb = traceback.format_exc()
-        logging.error("risk_assess 엔드포인트 오류 발생:\n%s", tb)
+        logging.error("risk_assess 오류:\n%s", tb)
         return jsonify({"error": str(e), "traceback": tb}), 500
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
