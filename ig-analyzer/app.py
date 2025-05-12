@@ -11,9 +11,12 @@ import itertools
 
 IG_USERNAME = os.getenv("IG_USERNAME")
 IG_PASSWORD = os.getenv("IG_PASSWORD")
-logging.debug(f"🛠️ IG_USERNAME set? {bool(IG_USERNAME)}")
-logging.debug(f"🛠️ IG_PASSWORD set? {bool(IG_PASSWORD)}")
-
+if IG_USERNAME and IG_PASSWORD:
+    try:
+        L.login(IG_USERNAME, IG_PASSWORD)
+        logging.info("Instagram 스크래핑: 로그인 성공")
+    except Exception:
+        logging.warning("Instagram 스크래핑: 로그인 실패, 익명으로 시도합니다")
 # ——— 로깅 설정 ———
 logging.basicConfig(
     level=logging.DEBUG,
