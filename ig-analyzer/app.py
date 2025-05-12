@@ -9,14 +9,7 @@ from flask_cors import CORS
 import instaloader
 import itertools
 
-IG_USERNAME = os.getenv("IG_USERNAME")
-IG_PASSWORD = os.getenv("IG_PASSWORD")
-if IG_USERNAME and IG_PASSWORD:
-    try:
-        L.login(IG_USERNAME, IG_PASSWORD)
-        logging.info("Instagram 스크래핑: 로그인 성공")
-    except Exception:
-        logging.warning("Instagram 스크래핑: 로그인 실패, 익명으로 시도합니다")
+
 # ——— 로깅 설정 ———
 logging.basicConfig(
     level=logging.DEBUG,
@@ -43,6 +36,7 @@ L = instaloader.Instaloader(
     download_videos=False,
     post_metadata_txt_pattern=""
 )
+# — Instagram 로그인 (env에 설정된 경우만) —
 IG_USERNAME = os.getenv("IG_USERNAME")
 IG_PASSWORD = os.getenv("IG_PASSWORD")
 if IG_USERNAME and IG_PASSWORD:
@@ -51,6 +45,12 @@ if IG_USERNAME and IG_PASSWORD:
         logging.info("Instagram 스크래핑: 로그인 성공")
     except Exception:
         logging.warning("Instagram 스크래핑: 로그인 실패, 익명으로 시도합니다")
+
+# — 로깅 설정 —
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 def fetch_user_interactions(username: str, limit: int = 5) -> dict:
     """
