@@ -9,6 +9,11 @@ from flask_cors import CORS
 import instaloader
 import itertools
 
+IG_USERNAME = os.getenv("IG_USERNAME")
+IG_PASSWORD = os.getenv("IG_PASSWORD")
+logging.debug(f"🛠️ IG_USERNAME set? {bool(IG_USERNAME)}")
+logging.debug(f"🛠️ IG_PASSWORD set? {bool(IG_PASSWORD)}")
+
 # ——— 로깅 설정 ———
 logging.basicConfig(
     level=logging.DEBUG,
