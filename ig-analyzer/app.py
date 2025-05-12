@@ -2,13 +2,11 @@ import logging
 import traceback
 import os
 import base64
+import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from openai import OpenAI
 from flask_cors import CORS
-import instaloader
-import itertools
-
 
 # ——— 로깅 설정 ———
 logging.basicConfig(
@@ -28,34 +26,10 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# instaloader 초기화 (이미지·댓글 다운로드 하지 않음)
-L = instaloader.Instaloader(
-    download_pictures=False,
-    download_comments=False,
-    save_metadata=False,
-    download_videos=False,
-    post_metadata_txt_pattern=""
-)
-# — Instagram 로그인 (env에 설정된 경우만) —
-IG_USERNAME = os.getenv("IG_USERNAME")
-IG_PASSWORD = os.getenv("IG_PASSWORD")
-if IG_USERNAME and IG_PASSWORD:
-    try:
-        L.login(IG_USERNAME, IG_PASSWORD)
-        logging.info("Instagram 스크래핑: 로그인 성공")
-    except Exception:
-        logging.warning("Instagram 스크래핑: 로그인 실패, 익명으로 시도합니다")
-
-# — 로깅 설정 —
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
 def fetch_user_interactions(username: str, limit: int = 5) -> dict:
     """
-    instaloader를 이용해 공개 계정(username)의
-    최근 limit개 게시물 캡션·좋아요 평균·댓글 텍스트 추출
+    Instagram 웹 프로필 JSON API를 이용해 공개 계정(username)의
+    최근 limit개 게시물 캡션·좋아요 평균·(댓글 수) 추출
     """
     interactions = {
         "recent_posts": [],
@@ -63,26 +37,31 @@ def fetch_user_interactions(username: str, limit: int = 5) -> dict:
         "recent_comment_texts": []
     }
     try:
-        profile = instaloader.Profile.from_username(L.context, username)
-        posts = profile.get_posts()
+        UA = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        )
+        url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
+        headers = {"User-Agent": UA}
+        resp = requests.get(url, headers=headers)
+        resp.raise_for_status()
+        user = resp.json()["data"]["user"]
 
+        edges = user["edge_owner_to_timeline_media"]["edges"][:limit]
         likes = []
-        for post in itertools.islice(posts, limit):
-            # 캡션 저장 (최대 100자)
-            cap = post.caption or ""
-            interactions["recent_posts"].append(cap[:100])
-            # 좋아요 수 저장
-            likes.append(post.likes)
-            # 댓글 최대 10개 저장
-            count = 0
-            for comment in post.get_comments():
-                interactions["recent_comment_texts"].append(comment.text)
-                count += 1
-                if count >= 10:
-                    break
+        for edge in edges:
+            node = edge["node"]
+            # 캡션
+            cap_edges = node.get("edge_media_to_caption", {}).get("edges", [])
+            text = cap_edges[0]["node"]["text"][:100] if cap_edges else ""
+            interactions["recent_posts"].append(text)
+            # 좋아요
+            likes.append(node.get("edge_liked_by", {}).get("count", 0))
+            # (원하면) 댓글 수집 대신 비어둡니다
+            # interactions["recent_comment_texts"].append(...)
 
         if likes:
-            interactions["avg_likes"] = int(sum(likes) / len(likes))
+            interactions["avg_likes"] = sum(likes) // len(likes)
 
     except Exception:
         logging.error("Instagram 스크래핑 오류:\n%s", traceback.format_exc())
@@ -102,7 +81,6 @@ def analyze():
         data = request.get_json()
         caption   = data.get("caption", "")
         image_b64 = data.get("image")
-
         if not image_b64:
             return jsonify({"error": "image missing"}), 400
 
@@ -126,10 +104,6 @@ def analyze():
 
         response = client.chat.completions.create(
             model="gpt-4o",
-            multimodal_inputs=[{
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}
-            }],
             messages=[
                 {"role": "system", "content": "당신은 인스타그램 감성 분석 도우미입니다."},
                 {"role": "user",   "content": prompt}
@@ -162,11 +136,9 @@ def risk_assess():
         caption   = payload.get("caption", "")
         image_b64 = payload.get("image")
         target_id = payload.get("target_user_id")
-
         if not image_b64 or not target_id:
             return jsonify({"error": "image or target_user_id missing"}), 400
 
-        # 스크래핑 방식으로 인터랙션 정보 가져오기
         interactions = fetch_user_interactions(target_id)
 
         prompt = f"""
@@ -194,10 +166,6 @@ def risk_assess():
 
         response = client.chat.completions.create(
             model="gpt-4o",
-            multimodal_inputs=[{
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}
-            }],
             messages=[
                 {
                     "role": "system",
@@ -213,7 +181,7 @@ def risk_assess():
         )
 
         result = response.choices[0].message.content.strip()
-        print(">>> BACKEND RESPONSE:", result)
+        logging.debug("risk_assess 응답: %s", result)
         return jsonify({"risk_assessment": result})
 
     except Exception as e:
