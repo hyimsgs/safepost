@@ -26,16 +26,13 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
+
 def fetch_user_interactions(username: str, limit: int = 5) -> dict:
     """
     Instagram 웹 프로필 JSON API를 이용해 공개 계정(username)의
-    최근 limit개 게시물 캡션·좋아요 평균·(댓글 수) 추출
+    최근 limit개 게시물 캡션·좋아요 평균·댓글 수 추출
     """
-    interactions = {
-        "recent_posts": [],
-        "avg_likes": 0,
-        "recent_comment_texts": []
-    }
+    interactions = {"recent_posts": [], "avg_likes": 0, "recent_comment_texts": []}
     try:
         UA = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -55,10 +52,9 @@ def fetch_user_interactions(username: str, limit: int = 5) -> dict:
             cap_edges = node.get("edge_media_to_caption", {}).get("edges", [])
             text = cap_edges[0]["node"]["text"][:100] if cap_edges else ""
             interactions["recent_posts"].append(text)
-            # 좋아요
+            # 좋아요 수
             likes.append(node.get("edge_liked_by", {}).get("count", 0))
-            # (원하면) 댓글 수집 대신 비어둡니다
-            # interactions["recent_comment_texts"].append(...)
+            # (댓글은 생략)
 
         if likes:
             interactions["avg_likes"] = sum(likes) // len(likes)
@@ -71,15 +67,15 @@ def fetch_user_interactions(username: str, limit: int = 5) -> dict:
 def ping():
     return jsonify({"pong": True})
 
-@app.route("/", methods=["GET"])
+@app.route('/', methods=['GET'])
 def home():
     return "SafePost API is running!"
 
-@app.route("/analyze", methods=["POST"])
+@app.route('/analyze', methods=['POST'])
 def analyze():
     try:
         data = request.get_json()
-        caption   = data.get("caption", "")
+        caption = data.get("caption", "")
         image_b64 = data.get("image")
         if not image_b64:
             return jsonify({"error": "image missing"}), 400
@@ -105,7 +101,7 @@ def analyze():
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "당신은 인스타그램 감성 분석 도우미입니다."},
+                {"role": "system", "content": "당신은 인스타그램 감성 분석 도우미입니다. JSON 형식으로만 응답하세요."},
                 {"role": "user",   "content": prompt}
             ],
             temperature=0.0,
@@ -121,19 +117,19 @@ def analyze():
         logging.error("analyze 엔드포인트 오류:\n%s", tb)
         return jsonify({"error": str(e), "traceback": tb}), 500
 
-@app.route("/risk_assess", methods=["OPTIONS"])
+@app.route('/risk_assess', methods=['OPTIONS'])
 def risk_assess_preflight():
-    return ("", 200, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
+    return ('', 200, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
     })
 
-@app.route("/risk_assess", methods=["POST"])
+@app.route('/risk_assess', methods=['POST'])
 def risk_assess():
     try:
-        payload   = request.get_json()
-        caption   = payload.get("caption", "")
+        payload = request.get_json()
+        caption = payload.get("caption", "")
         image_b64 = payload.get("image")
         target_id = payload.get("target_user_id")
         if not image_b64 or not target_id:
@@ -142,23 +138,22 @@ def risk_assess():
         interactions = fetch_user_interactions(target_id)
 
         prompt = f"""
-너는 인스타 지인 리스크 평가 전문가야.
+너는 인스타 지인 반응 리스크 평가 전문가야.
 
 아래는 대상 지인({target_id})의 최근 활동 내역이야:
 - 최근 게시물 요약: {interactions['recent_posts']}
 - 평균 좋아요 수: {interactions['avg_likes']}
-- 지인이 단 최근 댓글 예시: {interactions['recent_comment_texts'] or '없음'}
 
 아래 게시물(이미지+캡션)에 대해:
-1) 싫어할 확률(0~100)%,
-2) 민감 포인트,
+1) 싫어하지 않을 확률(0~100)%
+2) 민감 포인트
 3) 공개 범위 추천
 
-응답 포맷(JSON):
+반드시 아래 형식으로만 JSON을 반환하세요:
 {{
-  "risk_assessment": "싫어할 확률: X%",
-  "sensitive_points": ["포인트1", "포인트2"],
-  "visibility_recommendation": "public|private|close_friends"
+  "싫어하지않을확률": "X%",
+  "민감포인트": ["포인트1", "포인트2"],
+  "공개범위추천": "전체공개|비공개|친구공개"
 }}
 
 캡션: {caption}
@@ -171,7 +166,8 @@ def risk_assess():
                     "role": "system",
                     "content": (
                         "당신은 인스타그램 포스트의 팔로워 반응 리스크를 평가하는 도구입니다. "
-                        "반드시 JSON 형식으로만 응답해주세요."
+                        "영어를 사용하지 말고, 키와 값을 모두 한국어로 출력하세요. "
+                        "반드시 JSON 형식으로만 응답하세요."
                     )
                 },
                 {"role": "user", "content": prompt}
